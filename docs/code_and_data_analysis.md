@@ -1,4 +1,3 @@
----
 # Phân tích mã nguồn và dữ liệu — Bitcoin
 Generated file: `D:\Trực quan hóa dữ liệu\TQH\data\processed\coingecko_bitcoin_market_chart_last365d_1D_analysis.json`
 
