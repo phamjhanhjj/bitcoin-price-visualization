@@ -1,55 +1,61 @@
-# Code & Data Analysis — Bitcoin
-Generated file: D:\Trực quan hóa dữ liệu\TQH\data\processed\coingecko_bitcoin_market_chart_last365d_1D_analysis.json
+---
+# Phân tích mã nguồn và dữ liệu — Bitcoin
+Generated file: `D:\Trực quan hóa dữ liệu\TQH\data\processed\coingecko_bitcoin_market_chart_last365d_1D_analysis.json`
 
-## 1) Project code overview
-This project contains the following important modules:
+## 1) Tổng quan mã nguồn
+Dự án này bao gồm các module chính sau:
 
-- `src/fetch_data.py`: helpers to fetch raw JSON from CoinGecko (market_chart, ohlc). Includes `fetch_market_chart_range_chunked` and `fetch_recent_market_chart`. Saves raw JSON in `data/raw/` and metadata in `data/raw/meta/`.
+- `src/fetch_data.py`: các hàm lấy raw JSON từ CoinGecko (endpoints: market_chart, ohlc). Bao gồm `fetch_market_chart_range_chunked` để lấy lịch sử lớn bằng cách chia khúc, và `fetch_recent_market_chart` để lấy N ngày gần nhất. Raw JSON lưu ở `data/raw/` và metadata ở `data/raw/meta/`.
 
-- `src/process_data.py`: parse raw JSON to pandas DataFrame, detect timestamp unit (ms vs s), resample to OHLC (via `resample_to_ohlc`), and compute features (pct_change, log_return, MA7, MA30, volatility). Exposes `process_and_save` to save a processed Parquet file in `data/processed/`.
+- `src/process_data.py`: parse raw JSON thành pandas DataFrame, tự động phát hiện đơn vị timestamp (ms vs s), resample sang OHLC (hàm `resample_to_ohlc`) và tính các feature (pct_change, log_return, MA7, MA30, volatility). Hàm `process_and_save` lưu file Parquet đã xử lý vào `data/processed/`.
 
-- `src/viz.py`: plotting helpers (Plotly and mplfinance). `plot_candlestick_plotly` returns a Plotly Figure.
+- `src/viz.py`: hàm vẽ dùng Plotly và mplfinance. `plot_candlestick_plotly` trả về một Plotly Figure để hiển thị tương tác.
 
-- `src/dashboard.py`: Streamlit dashboard to inspect processed data, compare files, and export CSV/Parquet/PNG. Uses caching to speed loads.
+- `src/dashboard.py`: ứng dụng Streamlit để xem dữ liệu đã xử lý, so sánh nhiều file, và xuất CSV/Parquet/PNG. Đã thêm caching để tăng tốc tải dữ liệu.
 
-- `src/generate_analysis.py`: this analysis generator (loads processed parquet and writes analysis JSON + docs).
+- `src/generate_analysis.py`: script sinh báo cáo (nội dung JSON + Markdown) từ file Parquet đã xử lý.
 
-## 2) Data file analyzed
-- Processed file: `coingecko_bitcoin_market_chart_last365d_1D.parquet`
-- Date range: **2024-10-05** to **2025-10-04**
-- Data points: **365** (missing close: 0)
+## 2) File dữ liệu được phân tích
+- File đã xử lý: `coingecko_bitcoin_market_chart_last365d_1D.parquet`
+- Phạm vi ngày: **2024-10-05** → **2025-10-04**
+- Số điểm dữ liệu: **365** (số ngày thiếu close: 0)
 
-## 3) Price statistics
-- Min price: 60,195.18 USD
-- Max price: 123,560.99 USD
-- Median price: 98,881.47 USD
-- Mean price: 98,003.28 USD
-- Std dev (price): 14,763.20 USD
+## 3) Thống kê giá
+- Giá nhỏ nhất: 60,195.18 USD
+- Giá lớn nhất: 123,560.99 USD
+- Median: 98,881.47 USD
+- Mean: 98,003.28 USD
+- Độ lệch chuẩn (price): 14,763.20 USD
 
-## 4) Return statistics (daily)
-- Mean daily % change: 0.2115%
-- Median daily % change: 0.0259%
-- Std daily % change: 2.3017%
+## 4) Thống kê lợi suất (hàng ngày)
+- Trung bình phần trăm thay đổi hàng ngày: 0.2115%
+- Median phần trăm thay đổi: 0.0259%
+- Độ lệch chuẩn phần trăm thay đổi: 2.3017%
 - Skewness: 0.4838
 - Kurtosis: 2.8423
 
-## 5) Log-return & volatility
-- Mean log-return (daily): 0.001851
-- Std log-return (daily): 0.022871
-- Average 30-day rolling annualized vol (approx): 0.4255
+## 5) Log-return & độ biến động
+- Trung bình log-return (hàng ngày): 0.001851
+- Độ lệch chuẩn log-return (hàng ngày): 0.022871
+- Độ biến động trung bình (rolling 30 ngày, annualized): 0.4255
 
 ## 6) Drawdown
-- Max drawdown (fraction): -0.3095 (-30.95%)
-- Drawdown period: peak at 2024-12-17 to trough at 2025-04-09 (113 days)
+- Max drawdown (biểu diễn fraction): -0.3095 (≈ -30.95%)
+- Giai đoạn drawdown: peak tại 2024-12-17 → đáy tại 2025-04-09 (113 ngày)
 
-## 7) Recent performance
-- 30-day change: 10.0184%
+## 7) Hiệu suất gần đây
+- Thay đổi 30 ngày: 10.0184%
 
-## 8) Notes and recommendations
-- This analysis is computed on the processed OHLC series. If your processed file is daily resampled, the statistics are daily-based.
-- For higher-frequency insights (intraday), keep raw OHLC from the `ohlc` endpoint or fetch exchange data.
-- Check for survivorship / missing data: some days may be dropped during resample.
-- For forecasting or risk models, consider additional features (volume skew, realized vol, ADR, GARCH models).
+## 8) Biểu đồ bổ sung
+![Histogram lợi suất hàng ngày](images/returns_histogram.png)
+
+![Độ biến động 30 ngày (annualized)](images/vol30_timeseries.png)
+
+## 9) Ghi chú và khuyến nghị
+- Phân tích này được tính trên chuỗi OHLC đã được xử lý (daily). Nếu file đã xử lý của bạn là dữ liệu resample theo ngày thì các số liệu là theo ngày.
+- Nếu cần phân tích tần suất cao (intraday), hãy lưu raw OHLC từ endpoint `ohlc` hoặc lấy dữ liệu từ exchange.
+- Kiểm tra missing data / survivorship: một số ngày có thể bị loại khi resample.
+- Cho các model dự báo / rủi ro, cân nhắc thêm feature (volume skew, realized vol, ADR, mô hình GARCH, v.v.).
 
 ---
 Generated by `src/generate_analysis.py`
