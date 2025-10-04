@@ -1,0 +1,6 @@
+{
+  "project": "btc-visualization",
+  "source": "CoinGecko",
+  "notes": "Store raw JSON in data/raw and processed files in data/processed. Include fetch params in per-file metadata.",
+  "created_at": "2025-10-05T00:00:00Z"
+}

@@ -1,0 +1,7 @@
+{
+  "coin_id": "bitcoin",
+  "vs_currency": "usd",
+  "endpoint": "market_chart",
+  "days": 365,
+  "fetched_at": 1759598755
+}

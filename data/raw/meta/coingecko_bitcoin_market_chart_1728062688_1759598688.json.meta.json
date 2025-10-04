@@ -1,0 +1,8 @@
+{
+  "coin_id": "bitcoin",
+  "vs_currency": "usd",
+  "endpoint": "market_chart_range",
+  "from": 1728062688,
+  "to": 1759598688,
+  "fetched_at": 1759598689
+}

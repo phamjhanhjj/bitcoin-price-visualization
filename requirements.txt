@@ -1,0 +1,13 @@
+pycoingecko
+pandas
+numpy
+matplotlib
+seaborn
+mplfinance
+plotly
+pyarrow
+requests
+statsmodels
+prophet
+streamlit
+python-dateutil
