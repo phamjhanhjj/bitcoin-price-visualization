@@ -94,3 +94,26 @@ Hỗ trợ và mở rộng
 - Muốn incremental historical fetch (tự động chỉ lấy phần thiếu): có thể thêm helper chunked/incremental fetcher (tôi có thể hỗ trợ).
 
 Nếu bạn cần tôi triển khai thêm (ví dụ CI, deploy tự động, hay incremental fetcher), nói tôi biết và tôi sẽ làm tiếp.
+
+## Inspect processed Parquet & example scripts
+
+Hai script trợ giúp được cung cấp để nhanh chóng kiểm tra Parquet đã xử lý và tạo hình ảnh mẫu nến:
+
+- `scripts/inspect_parquet.py` — in ra head/shape/cột và ghi `data/processed/sample_coingecko_100.csv`.
+- `scripts/plot_candlestick.py` — tạo một PNG nến với MA7/MA30 và khối lượng, lưu vào `docs/images/candlestick_sample.png`. Nếu `kaleido` không được cài đặt, script sẽ quay lại việc lưu một HTML tương tác.
+
+Chạy từ thư mục gốc của dự án (PowerShell):
+
+```powershell
+Set-Location -Path 'D:\Trực quan hóa dữ liệu\TQH'
+python .\scripts\inspect_parquet.py
+python .\scripts\plot_candlestick.py
+```
+
+Nếu bước xuất hình ảnh thất bại, cài đặt `kaleido`:
+
+```powershell
+pip install kaleido
+```
+
+Cả hai script giả định rằng file Parquet đã xử lý tồn tại tại `data/processed/coingecko_bitcoin_market_chart_last365d_1D.parquet`.
