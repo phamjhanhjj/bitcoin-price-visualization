@@ -1,12 +1,12 @@
 # BTC Visualization (CoinGecko)
 
-This project fetches market data from CoinGecko, processes it into OHLC/time-series, computes features (returns, moving averages, volatility), and provides visualizations including an interactive Streamlit dashboard.
+Hướng dẫn này hướng dẫn bạn cách chuẩn bị môi trường, lấy dữ liệu từ CoinGecko, xử lý dữ liệu thành OHLC/time-series, tính các chỉ số (returns, moving averages, volatility), và chạy dashboard tương tác bằng Streamlit.
 
-See the `src/` scripts for fetch/processing/visualization helpers.
+Mọi script chính nằm trong thư mục `src/`.
 
-Quick start
+Hướng dẫn nhanh (Windows PowerShell)
 
-1. Create virtual env and activate (Windows PowerShell):
+1) Tạo virtual environment và kích hoạt
 
 ```powershell
 python -m venv venv
@@ -15,47 +15,82 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. Fetch data (example):
+2) Lấy dữ liệu mẫu từ CoinGecko
+
+- Lưu ý: CoinGecko public API giới hạn truy vấn lịch sử đối với public users trong vòng 365 ngày. Nếu bạn cần lịch sử >365 ngày, xem phần "Lưu ý" phía dưới.
+
+- Ví dụ: lấy 365 ngày gần nhất (dùng helper tiện lợi)
 
 ```powershell
-python -c "from src.fetch_data import fetch_market_chart_range; from datetime import datetime; fetch_market_chart_range('bitcoin','usd', datetime(2021,1,1), datetime(2021,12,31))"
+python -c "from src.fetch_data import fetch_recent_market_chart; fetch_recent_market_chart('bitcoin','usd',365)"
 ```
 
-3. Process data:
+- Hoặc lấy theo khoảng thời gian (range) — lưu ý hạn mức 365 ngày cho public API
 
 ```powershell
-python -c "from src.process_data import load_market_chart_json, process_and_save; process_and_save('data/raw/coingecko_bitcoin_market_chart_...json')"
+python -c "from src.fetch_data import fetch_market_chart_range; from datetime import datetime; fetch_market_chart_range('bitcoin','usd', datetime(2024,1,1), datetime(2024,12,31))"
 ```
 
-4. Run dashboard:
+3) Xử lý dữ liệu (parse → DataFrame → OHLC → feature)
+
+```powershell
+python -c "from src.process_data import process_and_save; process_and_save('data/raw/coingecko_bitcoin_market_chart_last365d.json')"
+```
+
+Lệnh trên sẽ tạo file processed (Parquet) trong `data/processed/`.
+
+4) Chạy dashboard (Streamlit)
 
 ```powershell
 streamlit run src/dashboard.py
 ```
 
-Notes
-- Keep raw JSON in `data/raw/` for reproducibility.
-- Check metadata in `metadata.json` after fetches.
+Mở trình duyệt tới: http://localhost:8501
 
-Important: CoinGecko historical range limits
--------------------------------------------------
-CoinGecko's public API limits historical queries for public users to the past 365 days. If you request a range older than 365 days using the `market_chart/range` endpoint you may see an error like:
+5) Các script phân tích & hình ảnh (tuỳ chọn)
 
-	"Your request exceeds the allowed time range. Public API users are limited to querying historical data within the past 365 days."
+- Sinh báo cáo nhanh (JSON + Markdown):
 
-Workarounds:
-- Request shorter ranges within the last 365 days.
-- Use the `fetch_recent_market_chart` helper in `src/fetch_data.py` to fetch the last-N-days (easier for rolling pulls).
-- Upgrade to a paid CoinGecko plan if you need full historical coverage.
-- Use an exchange API (e.g., Binance) for full OHLC historical data at fine granularity.
+```powershell
+python src/generate_analysis.py
+```
 
-Docker (optional)
+- Sinh biểu đồ phân tích (histogram returns, volatility time series):
 
-Build the image and run Streamlit inside a container (example):
+```powershell
+python src/generate_plots.py
+```
+
+Các ảnh sẽ được lưu vào `docs/images/` và báo cáo Markdown ở `docs/code_and_data_analysis.md`.
+
+Docker (tuỳ chọn)
+
+Bạn có thể build image Docker và chạy Streamlit trong container:
 
 ```powershell
 docker build -t btc-viz:latest .
 docker run -p 8501:8501 --rm btc-viz:latest
 ```
 
-Then open http://localhost:8501 in your browser.
+Sau đó mở http://localhost:8501
+
+Lưu ý & best practices
+
+- Granularity & rate limits:
+	- CoinGecko tự động điều chỉnh granularity cho các endpoint (ví dụ endpoint `ohlc` hay `market_chart/range` có thể trả nến theo tần suất khác nhau tuỳ khoảng thời gian). Public API giới hạn lịch sử tới 365 ngày; nếu cần dữ liệu dài hạn hoặc nến tần suất cao, cân nhắc dùng API của exchange (Binance) hoặc nâng cấp plan CoinGecko.
+
+- Lưu raw JSON:
+	- Luôn giữ bản raw JSON trong `data/raw/` để có thể debug và tái xử lý.
+
+- Metadata:
+	- Mỗi fetch sẽ lưu metadata trong `data/raw/meta/` (điều này giúp reproducibility).
+
+- An toàn:
+	- Không lưu API keys trong code. Dùng biến môi trường nếu cần.
+
+Hỗ trợ và mở rộng
+
+- Muốn so sánh nhiều coin: fetch và process tương ứng cho coin khác rồi mở dashboard, chọn nhiều file để so sánh.
+- Muốn incremental historical fetch (tự động chỉ lấy phần thiếu): có thể thêm helper chunked/incremental fetcher (tôi có thể hỗ trợ).
+
+Nếu bạn cần tôi triển khai thêm (ví dụ CI, deploy tự động, hay incremental fetcher), nói tôi biết và tôi sẽ làm tiếp.

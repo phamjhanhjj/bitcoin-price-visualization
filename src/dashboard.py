@@ -1,9 +1,20 @@
+import sys
 import streamlit as st
 import os
 import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
+
+# Ensure project root is on sys.path so `import src.xxx` works when running
+# the script directly (e.g. `streamlit run src/dashboard.py`). When Python
+# runs a file directly its sys.path[0] is the file's directory (src/), so
+# importing package `src` fails unless the project root is added.
+ROOT = Path(__file__).resolve().parents[1]
+root_str = str(ROOT)
+if root_str not in sys.path:
+    sys.path.insert(0, root_str)
+
 from src.viz import plot_candlestick_plotly
 
 ROOT = Path(__file__).resolve().parents[1]
