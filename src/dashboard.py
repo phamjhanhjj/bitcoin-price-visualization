@@ -1,179 +1,197 @@
-import sys
 import streamlit as st
 import os
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from pathlib import Path
-from datetime import datetime
-
-# Ensure project root is on sys.path so `import src.xxx` works when running
-# the script directly (e.g. `streamlit run src/dashboard.py`). When Python
-# runs a file directly its sys.path[0] is the file's directory (src/), so
-# importing package `src` fails unless the project root is added.
-ROOT = Path(__file__).resolve().parents[1]
-root_str = str(ROOT)
-if root_str not in sys.path:
-    sys.path.insert(0, root_str)
-
-from src.viz import plot_candlestick_plotly
+from datetime import datetime, timedelta
+from viz import plot_candlestick_plotly
+from fetch_realtime import fetch_realtime_data, fetch_realtime_range
 
 ROOT = Path(__file__).resolve().parents[1]
-PROCESSED_DIR = ROOT / 'data' / 'processed'
+PROCESSED_DIR = ROOT / 'data/processed'
 
 st.set_page_config(layout='wide')
 st.title('BTC Visualization Dashboard (CoinGecko)')
 
-st.sidebar.header('Data')
-files = list(PROCESSED_DIR.glob('*.parquet')) if PROCESSED_DIR.exists() else []
-# allow multi-select to compare coins/files
-file_choices = st.sidebar.multiselect('Processed file(s) (select 1 or more)', options=[str(f.name) for f in files], default=[str(files[-1].name)] if files else [])
+# === Sidebar: Data Mode ===
+st.sidebar.header("Data Mode")
+mode = st.sidebar.radio("Select data mode", ["Offline", "Realtime (last N minutes)", "Custom Range"])
 
-file_choice = file_choices[0] if file_choices else None
+# === Load Data ===
+if mode == "Realtime (last N minutes)":
+    minutes = st.sidebar.slider("Lookback minutes", 15, 1440, 60, step=15)
+    try:
+        df = fetch_realtime_data("bitcoin", "usd", minutes=minutes, cache_seconds=300)
+    except Exception as e:
+        st.error(f"Cannot fetch realtime data: {e}")
+        st.stop()
+elif mode == "Custom Range":
+    start_date = st.sidebar.date_input("Start date", datetime.utcnow().date() - timedelta(days=7))
+    end_date = st.sidebar.date_input("End date", datetime.utcnow().date())
+    if start_date > end_date:
+        st.error("Start date must be before End date")
+        st.stop()
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date, datetime.max.time())
+    try:
+        df = fetch_realtime_range("bitcoin", "usd", start=start_dt, end=end_dt, cache_seconds=300)
+    except Exception as e:
+        st.error(f"Cannot fetch custom range data: {e}")
+        st.stop()
+else:  # Offline
+    files = list(PROCESSED_DIR.glob('*.parquet')) if PROCESSED_DIR.exists() else []
+    file_choices = st.sidebar.multiselect(
+        'Processed file(s)',
+        options=[str(f.name) for f in files],
+        default=[str(files[-1].name)] if files else []
+    )
+    if not file_choices:
+        st.info('No processed files found.')
+        st.stop()
+    file_choice = file_choices[0]
 
-if not file_choice:
-    st.info('No processed files found. Run the processing script to create data in data/processed.')
-    st.stop()
+    @st.cache_data
+    def load_parquet(path):
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        return df
 
-@st.cache_data
-def load_parquet(path):
-    df = pd.read_parquet(path)
-    df.index = pd.to_datetime(df.index)
-    return df
+    df = load_parquet(PROCESSED_DIR / file_choice)
+    # Range filter
+    min_date = df.index.min().date()
+    max_date = df.index.max().date()
+    start, end = st.sidebar.slider(
+        'Select range',
+        min_value=min_date,
+        max_value=max_date,
+        value=(min_date, max_date)
+    )
+    df = df.loc[(df.index.date >= start) & (df.index.date <= end)]
 
-df = load_parquet(PROCESSED_DIR / file_choice)
+# === Chart Options ===
+st.sidebar.header('Chart Options')
+ma_short = st.sidebar.number_input('MA short window', 1, 200, 7)
+ma_long = st.sidebar.number_input('MA long window', 1, 400, 30)
+resample_option = st.sidebar.selectbox('Resample interval', ['None','1D','12H','6H','4H','1H'])
+show_close = st.sidebar.checkbox('Show Close', True)
+show_ma_short = st.sidebar.checkbox('Show MA Short', True)
+show_ma_long = st.sidebar.checkbox('Show MA Long', True)
+show_bb_upper = st.sidebar.checkbox('Show BB Upper', True)
+show_bb_lower = st.sidebar.checkbox('Show BB Lower', True)
+show_volume = st.sidebar.checkbox('Show Volume', True)
 
-st.sidebar.header('Range')
-min_date = df.index.min().date()
-max_date = df.index.max().date()
-# date range slider (more interactive)
-start, end = st.sidebar.slider('Date range', value=(min_date, max_date), min_value=min_date, max_value=max_date)
-
-# function to load and filter a parquet file (cached above)
-def load_and_filter(name, start_date, end_date):
-    path = PROCESSED_DIR / name
-    d = load_parquet(path)
-    d = d.loc[(d.index.date >= start_date) & (d.index.date <= end_date)]
-    return d
-
-# support multiple selections
-dfs = {}
-for name in file_choices:
-    dfs[name] = load_and_filter(name, start, end)
-
-# choose main df for single-file flows
-df_sel = dfs[file_choice] if file_choice else pd.DataFrame()
-
-st.sidebar.header('Chart options')
-ma_short = st.sidebar.number_input('MA short window', min_value=1, max_value=200, value=7)
-ma_long = st.sidebar.number_input('MA long window', min_value=1, max_value=400, value=30)
-resample_option = st.sidebar.selectbox('Resample interval (note: limited by source granularity)', options=['None','1D','12H','6H','4H','1H'])
-show_ma = st.sidebar.checkbox('Show moving averages', value=True)
-show_volume = st.sidebar.checkbox('Show volume (candlestick)', value=True)
-compare_mode = st.sidebar.selectbox('Compare mode', options=['None','Overlay','Indexed (base=100)','Separate axes'])
-normalize = st.sidebar.checkbox('Normalize closes to 100 (for compare)', value=False)
-
-with st.sidebar.expander('Settings'):
-    csv_float_format = st.checkbox('CSV floats as 6 decimal places', value=True)
-
-# If data has only OHLC already, resampling 'None' uses existing
-df_work = df_sel.copy()
-if resample_option != 'None':
-    # If the processed file already has OHLC columns use them; else try to resample from price
+# === Resample if needed ===
+df_work = df.copy()
+if resample_option != 'None' and not df_work.empty:
     if set(['open','high','low','close']).issubset(df_work.columns):
-        # resample OHLC
-        try:
-            df_work = df_work.resample(resample_option).agg({
-                'open':'first','high':'max','low':'min','close':'last','volume':'sum'
-            })
-        except Exception:
-            st.warning('Resample failed: check source index frequency and granularity')
+        df_work = df_work.resample(resample_option).agg({
+            'open':'first','high':'max','low':'min','close':'last','volume':'sum'
+        })
     elif 'price' in df_work.columns:
-        try:
-            df_work = df_work['price'].resample(resample_option).agg(['first','max','min','last'])
-            df_work.columns = ['open','high','low','close']
-        except Exception:
-            st.warning('Resample from price failed: check source index frequency and granularity')
+        df_work = df_work['price'].resample(resample_option).agg(['first','max','min','last'])
+        df_work.columns = ['open','high','low','close']
 
 df_work.dropna(inplace=True)
 
-st.header('Price (Close)')
-col1, col2 = st.columns([3,1])
-with col1:
-    fig_line = go.Figure()
-    fig_line.add_trace(go.Scatter(x=df_work.index, y=df_work['close'], name='Close'))
-    if show_ma and 'close' in df_work.columns:
-        fig_line.add_trace(go.Scatter(x=df_work.index, y=df_work['close'].rolling(window=ma_short).mean(), name=f'MA{ma_short}'))
-        fig_line.add_trace(go.Scatter(x=df_work.index, y=df_work['close'].rolling(window=ma_long).mean(), name=f'MA{ma_long}'))
-    fig_line.update_layout(height=350, margin={'l':20,'r':20,'t':30,'b':20})
-    st.plotly_chart(fig_line, use_container_width=True)
-with col2:
-    st.metric('Start', str(df_work.index.min().date()) if not df_work.empty else '-')
-    st.metric('End', str(df_work.index.max().date()) if not df_work.empty else '-')
+# === Compute indicators ===
+if 'close' not in df_work.columns and 'price' in df_work.columns:
+    df_work['close'] = df_work['price']
 
-if 'close' in df_work.columns and compare_mode == 'None' and len(file_choices) <= 1:
-    # compute moving averages dynamically for display
-    df_display = df_work.copy()
-    df_display[f'MA{ma_short}'] = df_display['close'].rolling(window=ma_short).mean()
-    df_display[f'MA{ma_long}'] = df_display['close'].rolling(window=ma_long).mean()
-    st.subheader('Close with MAs')
-    fig_line = go.Figure()
-    fig_line.add_trace(go.Scatter(x=df_display.index, y=df_display['close'], name='Close'))
-    if show_ma:
-        fig_line.add_trace(go.Scatter(x=df_display.index, y=df_display[f'MA{ma_short}'], name=f'MA{ma_short}'))
-        fig_line.add_trace(go.Scatter(x=df_display.index, y=df_display[f'MA{ma_long}'], name=f'MA{ma_long}'))
-    st.plotly_chart(fig_line, use_container_width=True)
+df_work['MA_short'] = df_work['close'].rolling(ma_short).mean()
+df_work['MA_long'] = df_work['close'].rolling(ma_long).mean()
+df_work['BB_mid'] = df_work['close'].rolling(20).mean()
+df_work['BB_std'] = df_work['close'].rolling(20).std()
+df_work['BB_upper'] = df_work['BB_mid'] + 2*df_work['BB_std']
+df_work['BB_lower'] = df_work['BB_mid'] - 2*df_work['BB_std']
 
-# If multiple files selected or compare mode requested, build comparison chart
-if compare_mode != 'None' or len(file_choices) > 1:
-    st.subheader('Comparison')
-    comp_fig = go.Figure()
-    # build series for each file
-    for name, d in dfs.items():
-        if d.empty or 'close' not in d.columns:
-            continue
-        series = d['close'].copy()
-        if compare_mode == 'Indexed (base=100)' or normalize:
-            base = series.iloc[0]
-            series = (series / base) * 100
-        comp_fig.add_trace(go.Scatter(x=series.index, y=series.values, name=name.replace('.parquet','')))
-    comp_fig.update_layout(height=450, margin={'l':20,'r':20,'t':30,'b':20})
-    st.plotly_chart(comp_fig, use_container_width=True)
+df_work['pct_change'] = df_work['close'].pct_change()
+df_work['log_return'] = np.log(df_work['close']/df_work['close'].shift(1))
+cum = (1 + df_work['pct_change']).cumprod()
+df_work['drawdown'] = cum / cum.cummax() - 1
+df_work['rolling_vol_30d'] = df_work['log_return'].rolling(30).std() * np.sqrt(365)
 
-st.header('Candlestick')
+# RSI 14
+delta = df_work['close'].diff()
+up = delta.clip(lower=0)
+down = -delta.clip(upper=0)
+roll_up = up.rolling(14).mean()
+roll_down = down.rolling(14).mean()
+RS = roll_up / roll_down
+df_work['RSI'] = 100 - (100 / (1 + RS))
+
+# Trading Signals (MA crossover + RSI + Bollinger)
+signals = []
+for i in range(len(df_work)):
+    sig = "Hold"
+    if i>0:
+        if df_work['MA_short'].iloc[i] > df_work['MA_long'].iloc[i] and df_work['MA_short'].iloc[i-1] <= df_work['MA_long'].iloc[i-1]:
+            sig = "Buy"
+        elif df_work['MA_short'].iloc[i] < df_work['MA_long'].iloc[i] and df_work['MA_short'].iloc[i-1] >= df_work['MA_long'].iloc[i-1]:
+            sig = "Sell"
+        if df_work['RSI'].iloc[i] < 30:
+            sig = "Buy"
+        elif df_work['RSI'].iloc[i] > 70:
+            sig = "Sell"
+        if df_work['close'].iloc[i] < df_work['BB_lower'].iloc[i]:
+            sig = "Buy"
+        elif df_work['close'].iloc[i] > df_work['BB_upper'].iloc[i]:
+            sig = "Sell"
+    signals.append(sig)
+df_work['Signal'] = signals
+
+# === Price & Indicators plot ===
+st.header('Price & Technical Indicators')
+fig_price = go.Figure()
+if show_close:
+    fig_price.add_trace(go.Scatter(x=df_work.index, y=df_work['close'], name='Close'))
+if show_ma_short:
+    fig_price.add_trace(go.Scatter(x=df_work.index, y=df_work['MA_short'], name=f'MA{ma_short}'))
+if show_ma_long:
+    fig_price.add_trace(go.Scatter(x=df_work.index, y=df_work['MA_long'], name=f'MA{ma_long}'))
+if show_bb_upper:
+    fig_price.add_trace(go.Scatter(x=df_work.index, y=df_work['BB_upper'], name='BB Upper', line=dict(dash='dot', color='red')))
+if show_bb_lower:
+    fig_price.add_trace(go.Scatter(x=df_work.index, y=df_work['BB_lower'], name='BB Lower', line=dict(dash='dot', color='red')))
+st.plotly_chart(fig_price, use_container_width=True)
+
+# === Candlestick ===
+st.header('Candlestick Chart')
 if set(['open','high','low','close']).issubset(df_work.columns):
-    fig = plot_candlestick_plotly(df_work, title=f'Candlestick ({resample_option})')
+    fig_candle = plot_candlestick_plotly(df_work)
     if show_volume and 'volume' in df_work.columns:
-        fig.add_trace(go.Bar(x=df_work.index, y=df_work['volume'], name='Volume', marker={'color':'lightgrey'}, yaxis='y2'))
-        fig.update_layout(yaxis2=dict(overlaying='y', side='right', showgrid=False, position=0.15))
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info('No OHLC data available for candlestick. Try resampling from price or use a processed file with OHLC.')
+        fig_candle.add_trace(go.Bar(x=df_work.index, y=df_work['volume'], name='Volume', marker={'color':'lightgrey'}, yaxis='y2'))
+        fig_candle.update_layout(yaxis2=dict(overlaying='y', side='right', showgrid=False, position=0.15))
+    st.plotly_chart(fig_candle, use_container_width=True)
 
-st.header('Statistics')
+# === Log-return Histogram ===
+st.header('Log-Return Histogram')
+fig_hist = go.Figure()
+fig_hist.add_trace(go.Histogram(x=df_work['log_return'], nbinsx=50))
+st.plotly_chart(fig_hist, use_container_width=True)
+
+# === Drawdown ===
+st.header('Drawdown Chart')
+fig_dd = go.Figure()
+fig_dd.add_trace(go.Scatter(x=df_work.index, y=df_work['drawdown'], fill='tozeroy', name='Drawdown'))
+st.plotly_chart(fig_dd, use_container_width=True)
+
+# === Rolling Volatility ===
+st.header('30-Day Rolling Volatility')
+fig_vol = go.Figure()
+fig_vol.add_trace(go.Scatter(x=df_work.index, y=df_work['rolling_vol_30d'], name='Rolling Volatility'))
+st.plotly_chart(fig_vol, use_container_width=True)
+
+# === RSI ===
+st.header('RSI 14')
+fig_rsi = go.Figure()
+fig_rsi.add_trace(go.Scatter(x=df_work.index, y=df_work['RSI'], name='RSI'))
+st.plotly_chart(fig_rsi, use_container_width=True)
+
+# === Trading Signals Table ===
+st.header('Trading Signals (Last 50 rows)')
+st.dataframe(df_work[['close','MA_short','MA_long','RSI','BB_upper','BB_lower','Signal']].tail(50))
+
+# === Statistics Summary ===
+st.header('Statistics Summary')
 st.write(df_work.describe())
-
-# Export
-from io import BytesIO
-if not df_work.empty:
-    csv_buf = BytesIO()
-    if csv_float_format:
-        df_work.to_csv(csv_buf, float_format='%.6f')
-    else:
-        df_work.to_csv(csv_buf)
-    csv_buf.seek(0)
-    st.download_button('Download CSV', data=csv_buf, file_name=f'{file_choice.replace(".parquet","")}_{resample_option}.csv', mime='text/csv')
-
-    pq_buf = BytesIO()
-    df_work.to_parquet(pq_buf)
-    pq_buf.seek(0)
-    st.download_button('Download Parquet', data=pq_buf, file_name=f'{file_choice.replace(".parquet","")}_{resample_option}.parquet', mime='application/octet-stream')
-
-    # Download current figure as PNG (if available)
-    try:
-        # prioritize comparison fig if present
-        target_fig = comp_fig if ('comp_fig' in locals() and comp_fig.data) else (fig if 'fig' in locals() else None)
-        if target_fig is not None:
-            img_bytes = target_fig.to_image(format='png')
-            st.download_button('Download chart PNG', data=img_bytes, file_name='chart.png', mime='image/png')
-    except Exception as e:
-        st.info('PNG export requires the `kaleido` package for Plotly; install it if you want PNG export. Error: ' + str(e))
